@@ -1,6 +1,6 @@
 # LLM-Powered ACP Agent: Complete Guide (A-Z)
 
-This repository contains an advanced Agent Communication Protocol (ACP) implementation that integrates with GitHub's AI model (OpenAI GPT-5) to provide intelligent responses. This guide will walk you through everything from setup to completion of the assignment.
+This repository contains an advanced Agent Communication Protocol (ACP) implementation that integrates with GitHub's AI model (OpenAI GPT-4o) to provide intelligent responses. This guide will walk you through everything from setup to completion of the assignment.
 
 ## Table of Contents
 
@@ -276,6 +276,8 @@ Verify that:
 - It remembers context from previous messages
 - It handles errors gracefully with informative messages
 
+**Important Note:** The ACP SDK requires message roles to be either "user" or "agent", not "assistant". Ensure your code uses the correct role values.
+
 ## Submitting Your Assignment
 
 ### Pushing Changes to GitHub
@@ -335,6 +337,12 @@ git push origin submission
    - Ensure the server is running before starting the client
    - Check port availability (default is 8000)
    - Look for error messages in the server console
+   - If you see `'Context' object has no attribute 'run_id'` error, the code has been updated to use `session_id` or a fallback identifier
+   - For message validation errors: ensure you're using `role="agent"` instead of `role="assistant"` in your Message objects (ACP SDK requires specific role values)
+
+4. **Conversation Context Issues**
+   - If the agent doesn't remember previous conversation context, ensure you're using the same session ID across requests
+   - For the sample client, this is handled automatically
 
 
 ## How to Get a GitHub Token (Developer Key)

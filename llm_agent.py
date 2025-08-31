@@ -1,7 +1,10 @@
 import asyncio
 import os
+import json
+import time
 from collections.abc import AsyncGenerator
-from typing import Dict
+from typing import Dict, Any, List, Tuple
+from datetime import datetime
 
 from acp_sdk.models import Message, MessagePart
 from acp_sdk.server import Context, RunYield, RunYieldResume, Server
@@ -15,7 +18,7 @@ load_dotenv()
 
 # GitHub AI configuration
 ENDPOINT = "https://models.github.ai/inference"
-MODEL = "openai/gpt-5"
+MODEL = "openai/gpt-4o"
 TOKEN = os.environ.get("GITHUB_TOKEN")
 
 if not TOKEN:
@@ -30,8 +33,65 @@ client = ChatCompletionsClient(
 # Create ACP server
 server = Server()
 
+# Maximum number of messages to keep in conversation history
+MAX_HISTORY_LENGTH = 10
+
 # Store conversation history for each context
-conversation_history: Dict[str, list] = {}
+# Structure: Dict[conversation_id, List[Tuple[timestamp, message, is_user]]]
+conversation_history: Dict[str, List[Tuple[float, SystemMessage | UserMessage, bool]]] = {}
+
+def add_to_conversation_history(conversation_id: str, message: SystemMessage | UserMessage, is_user: bool = False):
+    """
+    Add a message to the conversation history with timestamp and manage history length
+    
+    Args:
+        conversation_id: Unique identifier for the conversation
+        message: The message to add
+        is_user: Whether this is a user message (True) or assistant message (False)
+    """
+    # Initialize history if it doesn't exist
+    if conversation_id not in conversation_history:
+        conversation_history[conversation_id] = []
+    
+    # Add message with current timestamp
+    timestamp = time.time()
+    conversation_history[conversation_id].append((timestamp, message, is_user))
+    
+    # Limit history length to prevent token explosion
+    if len(conversation_history[conversation_id]) > MAX_HISTORY_LENGTH:
+        # Keep system messages and recent messages
+        system_messages = [(ts, msg, is_u) for ts, msg, is_u in conversation_history[conversation_id] 
+                          if isinstance(msg, SystemMessage) and not is_u]
+        
+        # Get recent messages, excluding system messages
+        regular_messages = [(ts, msg, is_u) for ts, msg, is_u in conversation_history[conversation_id] 
+                           if not (isinstance(msg, SystemMessage) and not is_u)]
+        
+        # Sort by timestamp (newest first)
+        regular_messages.sort(key=lambda x: x[0], reverse=True)
+        
+        # Keep only the most recent messages
+        regular_messages = regular_messages[:MAX_HISTORY_LENGTH-len(system_messages)]
+        
+        # Combine and sort by timestamp (oldest first)
+        conversation_history[conversation_id] = system_messages + regular_messages
+        conversation_history[conversation_id].sort(key=lambda x: x[0])
+
+def get_conversation_messages(conversation_id: str) -> List[SystemMessage | UserMessage]:
+    """
+    Get all messages from the conversation history, properly ordered
+    
+    Args:
+        conversation_id: Unique identifier for the conversation
+        
+    Returns:
+        List of messages for the model context
+    """
+    if conversation_id not in conversation_history:
+        return []
+    
+    # Extract just the messages, not timestamps or user flags
+    return [msg for _, msg, _ in conversation_history[conversation_id]]
 
 
 @server.agent()
@@ -46,13 +106,42 @@ async def llm_assistant(
     2. Send them to the GitHub AI model
     3. Return the AI's response
     """
-    # Generate a unique conversation ID for this context
-    conversation_id = str(context.run_id)
+    # Inspect context object to find available attributes
+    context_dict = {}
+    for attr in dir(context):
+        if not attr.startswith('_') and not callable(getattr(context, attr)):
+            try:
+                value = getattr(context, attr)
+                if not callable(value):
+                    context_dict[attr] = str(value)
+            except Exception as e:
+                context_dict[attr] = f"Error accessing: {str(e)}"
     
-    # Initialize conversation history for this context if it doesn't exist
-    if conversation_id not in conversation_history:
-        conversation_history[conversation_id] = []
-
+    # Debug information as a thought
+    yield {"thought": f"Context object attributes: {json.dumps(context_dict)}"}
+    
+    # Generate a unique conversation ID using session_id from context variables
+    # This is more reliable than trying to access attributes directly
+    variables = getattr(context, 'variables', {})
+    session_id = variables.get('session_id', None) if variables else None
+    
+    # Fallback to other identifiers if session_id is not available
+    if not session_id:
+        # Try different possible attributes for identification
+        for id_attr in ['session_id', 'run_id', 'id']:
+            if hasattr(context, id_attr):
+                session_id = getattr(context, id_attr)
+                break
+        
+        # Last resort: use the object's memory address
+        if not session_id:
+            session_id = id(context)
+    
+    conversation_id = str(session_id)
+    
+    # Debug information
+    yield {"thought": f"Using conversation ID: {conversation_id}"}
+    
     # Process each incoming message
     for message in input:
         # Extract message content
@@ -65,19 +154,35 @@ async def llm_assistant(
         if not message_content:
             continue
         
-        # Add user message to conversation history
-        conversation_history[conversation_id].append(UserMessage(message_content))
+        # Add user message to conversation history with timestamp
+        user_message = UserMessage(message_content)
+        add_to_conversation_history(conversation_id, user_message, is_user=True)
+        
+        # Get current timestamp for logging
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Yield a thought to show processing
-        yield {"thought": "Processing request using GitHub AI model..."}
+        yield {"thought": f"[{current_time}] Processing request using GitHub AI model..."}
         await asyncio.sleep(0.5)
         
         try:
             # Create messages list with system prompt and conversation history
             messages = [
-                SystemMessage("You are a helpful assistant powered by GitHub AI."),
-                *conversation_history[conversation_id]
+                SystemMessage("""You are an AI and Machine Learning specialist powered by GitHub AI.
+You have expertise in machine learning algorithms, neural networks, deep learning frameworks, 
+and AI development best practices. Focus on providing clear, accurate explanations of AI concepts,
+implementation guidance, and practical advice.
+
+When sharing code, include detailed comments explaining key components.
+Offer insights into common pitfalls and optimization techniques.
+Keep explanations accessible but technically precise."""),
             ]
+            
+            # Add conversation history messages
+            messages.extend(get_conversation_messages(conversation_id))
+            
+            # Log the number of messages being sent to the API
+            yield {"thought": f"Sending {len(messages)} messages to the GitHub AI API..."}
             
             # Call the GitHub AI model
             response = client.complete(
@@ -89,23 +194,47 @@ async def llm_assistant(
             ai_response = response.choices[0].message.content
             
             # Add assistant response to conversation history
-            conversation_history[conversation_id].append(SystemMessage(ai_response))
+            assistant_message = SystemMessage(ai_response)
+            add_to_conversation_history(conversation_id, assistant_message)
             
             # Create and yield the response message
             response_message = Message(
-                role="assistant",
+                role="agent",  # Changed from 'assistant' to 'agent' to match ACP SDK requirements
                 parts=[MessagePart(content=ai_response, content_type="text/plain")]
             )
             
             yield response_message
             
         except Exception as e:
-            # Handle errors gracefully
-            error_message = f"Error calling GitHub AI model: {str(e)}"
+            # Handle errors gracefully with more specific error messages
+            error_message = "I'm sorry, but I encountered an issue."
+            
+            # Check for specific error types
+            error_str = str(e).lower()
+            
+            if "429" in error_str or "rate limit" in error_str:
+                # Extract retry-after time if available
+                retry_after = None
+                if hasattr(e, 'response') and hasattr(e.response, 'headers'):
+                    retry_after = e.response.headers.get('Retry-After')
+                
+                if retry_after:
+                    error_message = f"The GitHub AI API rate limit has been exceeded. Please try again in {retry_after} seconds."
+                else:
+                    error_message = "The GitHub AI API rate limit has been exceeded. Please try again later."
+            elif "timeout" in error_str:
+                error_message = "The request timed out. This might be due to high server load or network issues."
+            elif "token" in error_str or "authentication" in error_str or "auth" in error_str:
+                error_message = "There seems to be an authentication issue. Please check your GitHub token."
+            else:
+                error_message = f"Error calling GitHub AI model: {str(e)}"
+            
+            # Log the error for debugging
+            print(f"Error encountered: {str(e)}")
             
             # Create and yield error message
             error_response = Message(
-                role="assistant",
+                role="agent",  # Changed from 'assistant' to 'agent' to match ACP SDK requirements
                 parts=[MessagePart(content=error_message, content_type="text/plain")]
             )
             

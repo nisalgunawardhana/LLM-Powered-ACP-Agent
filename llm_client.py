@@ -22,7 +22,7 @@ async def example() -> None:
         # Print the response
         print("\nResponse from LLM agent:")
         for message in run.output:
-            if message.role == "assistant":
+            if message.role == "agent":  # Changed from 'assistant' to 'agent'
                 for part in message.parts:
                     if part.content_type == "text/plain":
                         print(f"\n{part.content}")
@@ -41,7 +41,7 @@ async def example() -> None:
         # Print the response
         print("\nFollow-up response:")
         for message in run.output:
-            if message.role == "assistant":
+            if message.role == "agent":  # Changed from 'assistant' to 'agent'
                 for part in message.parts:
                     if part.content_type == "text/plain":
                         print(f"\n{part.content}")
