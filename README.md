@@ -115,15 +115,21 @@ set GITHUB_TOKEN=your-github-token-goes-here
 
 ### Install Dependencies
 
-Install the required Python packages using uv:
+Initialize your project and install the required Python packages using uv:
 
+```bash
+# Initialize a new uv project with Python 3.11 or higher
+uv init --python ">=3.11"
+```
 ```bash
 # Install the ACP SDK
 uv add acp-sdk
-
+```
+```bash
 # Install the Azure AI Inference SDK
 uv add azure-ai-inference
-
+```
+```bash
 # Install dotenv for environment variable management
 uv add python-dotenv
 ```

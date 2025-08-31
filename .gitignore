@@ -159,3 +159,10 @@ cython_debug/
 # OS specific files
 .DS_Store
 Thumbs.db
+
+
+main.py
+pyproject.toml
+uv.lock
+
+
