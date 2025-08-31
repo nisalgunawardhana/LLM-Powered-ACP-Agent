@@ -341,8 +341,15 @@ git push origin submission
    - For message validation errors: ensure you're using `role="agent"` instead of `role="assistant"` in your Message objects (ACP SDK requires specific role values)
 
 4. **Conversation Context Issues**
-   - If the agent doesn't remember previous conversation context, ensure you're using the same session ID across requests
-   - For the sample client, this is handled automatically
+   - If the agent doesn't remember previous conversation context, ensure you're using the same `session_id` across requests
+   - For the sample client, this is handled automatically by saving the `session_id` from the first response
+
+5. **GitHub API Rate Limiting**
+   - The GitHub AI API has rate limits that may prevent requests from succeeding
+   - If you encounter "429 Too Many Requests" errors, you'll need to wait before making more requests
+   - The error message will include a "Retry-After" header indicating how many seconds to wait
+   - Consider using a different GitHub token if available
+   - In educational settings, you can use a mock response or sample data when rate limited
 
 
 ## How to Get a GitHub Token (Developer Key)

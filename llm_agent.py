@@ -20,6 +20,8 @@ load_dotenv()
 ENDPOINT = "https://models.github.ai/inference"
 MODEL = "openai/gpt-4o"
 TOKEN = os.environ.get("GITHUB_TOKEN")
+# Enable mock responses when rate limited (for educational purposes)
+USE_MOCK_WHEN_RATE_LIMITED = True
 
 if not TOKEN:
     raise ValueError("GITHUB_TOKEN environment variable is not set. Please set it before running this script.")
@@ -99,7 +101,7 @@ async def llm_assistant(
     input: list[Message], context: Context
 ) -> AsyncGenerator[RunYield, RunYieldResume]:
     """
-    An LLM-powered assistant that uses GitHub's AI model (OpenAI GPT-5) to generate responses.
+    An LLM-powered assistant that uses GitHub's AI model (OpenAI GPT-4o) to generate responses.
     
     This agent will:
     1. Process incoming messages
@@ -184,11 +186,58 @@ Keep explanations accessible but technically precise."""),
             # Log the number of messages being sent to the API
             yield {"thought": f"Sending {len(messages)} messages to the GitHub AI API..."}
             
-            # Call the GitHub AI model
-            response = client.complete(
-                messages=messages,
-                model=MODEL
-            )
+            # Check if we have a valid token before making API call
+            if not TOKEN or TOKEN.strip() == "":
+                raise ValueError("GitHub token is missing or empty")
+                
+            print(f"Making API call to GitHub AI model {MODEL}...")
+            
+            try:
+                # Call the GitHub AI model
+                response = client.complete(
+                    messages=messages,
+                    model=MODEL
+                )
+                print("API call successful, processing response...")
+            except Exception as e:
+                error_str = str(e).lower()
+                # If rate limited and mock responses are enabled, provide a mock response
+                if USE_MOCK_WHEN_RATE_LIMITED and ("429" in error_str or "rate limit" in error_str):
+                    print("Rate limit detected, using mock response for educational purposes...")
+                    
+                    # Create a mock response object with structure similar to the real response
+                    class MockMessage:
+                        def __init__(self, content):
+                            self.content = content
+                    
+                    class MockChoice:
+                        def __init__(self, message):
+                            self.message = message
+                    
+                    class MockResponse:
+                        def __init__(self, content):
+                            self.choices = [MockChoice(MockMessage(content))]
+                    
+                    # Create educational mock response
+                    mock_content = """[MOCK RESPONSE FOR EDUCATIONAL PURPOSES]
+
+This is a simulated response since the GitHub AI API rate limit has been exceeded.
+In a real application, you would need to implement proper rate limit handling.
+
+Some best practices for handling API rate limits:
+1. Implement exponential backoff and retry mechanisms
+2. Cache responses when possible
+3. Use a token bucket algorithm for client-side rate limiting
+4. Monitor your usage and adjust request patterns
+5. Consider implementing a queue system for high-volume applications
+
+For this educational example, you can continue exploring the application, but responses
+will be simulated until the rate limit resets.
+"""
+                    response = MockResponse(mock_content)
+                else:
+                    # Re-raise the exception if not a rate limit or mock is disabled
+                    raise
             
             # Extract the response content
             ai_response = response.choices[0].message.content
@@ -203,6 +252,7 @@ Keep explanations accessible but technically precise."""),
                 parts=[MessagePart(content=ai_response, content_type="text/plain")]
             )
             
+            print(f"Sending response (length: {len(ai_response)})")
             yield response_message
             
         except Exception as e:
@@ -211,12 +261,15 @@ Keep explanations accessible but technically precise."""),
             
             # Check for specific error types
             error_str = str(e).lower()
+            print(f"ERROR: {str(e)}")
             
             if "429" in error_str or "rate limit" in error_str:
+                print("Rate limit error detected!")
                 # Extract retry-after time if available
                 retry_after = None
                 if hasattr(e, 'response') and hasattr(e.response, 'headers'):
                     retry_after = e.response.headers.get('Retry-After')
+                    print(f"Retry-After header: {retry_after}")
                 
                 if retry_after:
                     error_message = f"The GitHub AI API rate limit has been exceeded. Please try again in {retry_after} seconds."
@@ -226,6 +279,7 @@ Keep explanations accessible but technically precise."""),
                 error_message = "The request timed out. This might be due to high server load or network issues."
             elif "token" in error_str or "authentication" in error_str or "auth" in error_str:
                 error_message = "There seems to be an authentication issue. Please check your GitHub token."
+                print(f"Token error. Token length: {len(TOKEN) if TOKEN else 0}")
             else:
                 error_message = f"Error calling GitHub AI model: {str(e)}"
             
