@@ -391,20 +391,3 @@ Follow me on social media for more sessions, tech tips, and giveaways:
 - [YouTube](https://www.youtube.com/channel/UCNP5-zR4mN6zkiJ9pVCM-1w) — Video tutorials and sessions
 
 Feel free to connect and stay updated!
-
-## FAQ
-
-**Q: Do I need a paid GitHub account to use the AI models?**  
-A: Yes, access to GitHub AI models typically requires a GitHub account with appropriate permissions, which may include paid plans.
-
-**Q: How can I check my token usage?**  
-A: You can check your GitHub token usage in your GitHub account settings under "Developer settings" > "Personal access tokens".
-
-**Q: Can I deploy this agent to production?**  
-A: This implementation is for educational purposes. For production use, you would need to add authentication, rate limiting, and other security measures.
-
-**Q: How do I choose a knowledge domain?**  
-A: Select a domain you're familiar with or interested in. Popular choices include programming, data science, cloud computing, or specific frameworks like React or TensorFlow.
-
-**Q: What if I encounter API rate limits?**  
-A: GitHub AI models have usage limits. If you hit a rate limit, wait before making more requests or optimize your prompt to use fewer tokens.
